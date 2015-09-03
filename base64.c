@@ -7,7 +7,7 @@
 #define DEBUG 1
 
 const unsigned char base64_table[64] = "ABCDEFGH" "IJKLMNOP" "QRSTUVWX" "YZabcdef" "ghijklmn" "opqrstub" "wxyz0123" "456789+/";
-const unsigned char hex_table[16] = "0123456789abcdef";
+
 const unsigned char pad_char[] = "=";
 
 cmstring_byte_array * cmstring_byte_array_to_base64(cmstring_byte_array * input_bytes) {
@@ -44,25 +44,6 @@ cmstring_byte_array * cmstring_byte_array_to_base64(cmstring_byte_array * input_
             output_bytes->bytes[i - 1] = pad_char[0];
             i--;
         }
-    }
-
-    return output_bytes;
-}
-
-cmstring_byte_array * hex_format_string_to_bytes (cmstring_byte_array * input_bytes) {
-    int i;
-    unsigned char lookup_digit[1];
-    unsigned char d1;
-    unsigned char d2;
-    size_t output_len = (input_bytes->len) / 2;
-    cmstring_byte_array * output_bytes = cmstring_new_byte_array(output_len);
-
-    for (i = 0; i < output_len; i++) {
-        lookup_digit[0] = input_bytes->bytes[2 * i];
-        d1 = strcspn(hex_table, lookup_digit);
-        lookup_digit[0] = input_bytes->bytes[(2 * i) + 1];
-        d2 = strcspn(hex_table, lookup_digit);
-        output_bytes->bytes[i] = d1 * 16 + d2;
     }
 
     return output_bytes;

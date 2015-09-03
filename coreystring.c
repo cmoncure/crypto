@@ -1,5 +1,7 @@
 #include <stdlib.h>
 
+const unsigned char hex_table[16] = "0123456789abcdef";
+
 typedef struct {
     size_t len;
     unsigned char * bytes;
@@ -155,6 +157,51 @@ unsigned char * cmstring_byte_array_to_c_str(cmstring_byte_array * byte_array) {
     memcpy(as_str, byte_array->bytes, byte_array->len * sizeof(unsigned char));
     as_str[len_str - 1] = 0x00;
     return as_str;
+}
+
+
+cmstring_byte_array * hex_format_string_to_bytes (cmstring_byte_array * input_bytes) {
+    int i;
+    unsigned char lookup_digit[1];
+    unsigned char d1;
+    unsigned char d2;
+    size_t output_len = (input_bytes->len) / 2;
+    cmstring_byte_array * output_bytes = cmstring_new_byte_array(output_len);
+
+    for (i = 0; i < output_len; i++) {
+        lookup_digit[0] = input_bytes->bytes[2 * i];
+        d1 = strcspn(hex_table, lookup_digit);
+        lookup_digit[0] = input_bytes->bytes[(2 * i) + 1];
+        d2 = strcspn(hex_table, lookup_digit);
+        output_bytes->bytes[i] = d1 * 16 + d2;
+    }
+
+    return output_bytes;
+}
+
+cmstring_byte_array * bytes_to_hex_format_string (cmstring_byte_array * input_bytes) {
+    unsigned int i = 0;
+    unsigned int d1;
+    unsigned int d2;
+    cmstring_byte_array * output_hex = cmstring_new_byte_array(input_bytes->len * 2);
+
+    while ( i < input_bytes->len ) {
+        d1 = input_bytes->bytes[i];
+        d2 = d1 % 16;
+        d1 -= d2;
+        output_hex->bytes[2 * i]   = hex_table[d1 / 16];
+        output_hex->bytes[2*i + 1] = hex_table[d2];
+        i++;
+    }
+    return output_hex;
+}
+
+cmstring_byte_array * hex_format_c_string_to_byte_array (unsigned char input_string[], size_t input_len) {
+    cmstring_byte_array * input_bytes = cmstring_new_byte_array(input_len - 1);
+    cmstring_set_byte_array(input_string, input_len - 1, input_bytes);
+    cmstring_byte_array * as_bytes = hex_format_string_to_bytes(input_bytes);
+
+    return as_bytes;
 }
 
 void cmstring_print_all () {
