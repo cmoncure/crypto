@@ -22,6 +22,6 @@ int main() {
     test_xor();
 
     cmstring_print_all();
-    cmstring_cleanup_all;
+    cmstring_cleanup_all();
     return 0;
 }
