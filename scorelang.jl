@@ -1,6 +1,6 @@
 export english
 
-english = (Char => Float32) [
+const english_frequency = (Char => Float32) [
     'E' => 12.02,
     'T' => 9.10,
     'A' => 8.12,
@@ -29,6 +29,29 @@ english = (Char => Float32) [
     'Z' => 0.07
     ]
 
+const english_words = [
+  "LIKE",
+  "THE",
+  "AND",
+  "THAT",
+  "HAVE",
+  "WITH",
+  "FROM",
+  "YOUR",
+  "NOT",
+  "THEY",
+  "SAY",
+  "SHE",
+  "WOULD",
+  "THERE",
+  "THEIR",
+  "WHAT"
+  ]
+
+const languages = [
+  "english" => (english_frequency, english_words)
+  ]
+
 function character_frequency_score (test_str::ASCIIString, glyph_frequency_dict::Dict)
   score = float32(0.0)
   test_str = uppercase(test_str)
@@ -51,3 +74,19 @@ function character_frequency_score (test_str::ASCIIString, glyph_frequency_dict:
   return score
 end
 
+function common_substrings_score (test_str::ASCIIString, common_words::Vector{ASCIIString})
+  score = int32(0)
+  test_str = uppercase(test_str)
+  for substring = common_words
+      if contains(test_str, substring)
+        score += length(substring) * 4
+      end
+  end
+  return score
+end
+
+function score_candidate_language(test_str::ASCIIString, language::String)
+  score = character_frequency_score(test_str, languages[language][1])
+  score += common_substrings_score(test_str, languages[language][2])
+  return score
+end
