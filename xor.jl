@@ -13,13 +13,13 @@ function fixed_length_xor (bytes_A::Array{Uint8}, bytes_B::Array{Uint8})
   return bytes_B
 end
 
-function repeating_xor (bytes_input::Array{Uint8}, bytes_key::Array{Uint8, 1})
+function repeating_xor (bytes_input::Array{Uint8}, bytes_key::Array{Uint8})
   i = one(Int32)
   input_len = sizeof(bytes_input)
   key_len = sizeof(bytes_key)
   bytes_output = Array(Uint8, input_len)
   while (i <= input_len)
-    bytes_output[i] = bytes_input[i] $ bytes_key[(i % key_len) + 1]  # +1 julia
+    bytes_output[i] = bytes_input[i] $ bytes_key[1 + ((i - 1) % key_len)]  # -1 julia
     i += 1
   end
   return bytes_output
@@ -38,10 +38,11 @@ function find_repeating_xor_decryption_key(cipher_text::Array{Uint8}, keys::Vect
   return candidate_key
 end
 
-function rank_repeating_xor_decryption_keys(cipher_text::Array{Uint8}, keys::Vector, threshold::Int = 50)
+function rank_repeating_xor_decryption_keys(cipher_text::Array{Uint8}, keys::Vector, threshold::Int)
+  clear_text::ASCIIString = ""
   results = Array((Array{Uint8}, Float32, ASCIIString), 0)
   for key in keys
-    clear_text = ascii(ascii_filter(repeating_xor(cipher_text, key)))
+    clear_text = ascii_filter(repeating_xor(cipher_text, key))
     score = score_candidate_language(clear_text, "english")
     if score >= threshold
       push!(results, (key, round(score, 2), clear_text))
@@ -50,14 +51,10 @@ function rank_repeating_xor_decryption_keys(cipher_text::Array{Uint8}, keys::Vec
   return sort(results, by=x -> x[2], rev=true)
 end
 
-function detect_xor_encryption(cipher_text::Array{Uint8}, keys::Vector, threshold::Int = 50)
-  clear_text = ""
+function detect_xor_encryption(cipher_text::Array{Uint8}, keys::Vector, threshold::Int)
+  clear_text::ASCIIString = ""
   for key = keys
-#    try
-      clear_text = ascii(ascii_filter(repeating_xor(cipher_text, key)))
-#    catch
-#      continue
-#    end
+    clear_text = ascii_filter(repeating_xor(cipher_text, key))
     s = score_candidate_language(clear_text, "english")
     if s > threshold
       return true
@@ -68,7 +65,7 @@ end
 
 function create_keys()
   k = Array(Any, 0)
-  for i = 0:
+  for i = 0:255
     a = Array(Uint8, 0)
     push!(a, (i))
     push!(k, a)
@@ -88,41 +85,14 @@ end
 function test_repeating_xor()
   input = "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"
   output = repeating_xor(hex2bytes(input), [uint8('X')])
-  return ascii(output) == "Cooking MC's like a pound of bacon"
+  pass1 = (ascii(output) == "Cooking MC's like a pound of bacon")
+
+  k = map(uint8, collect("ICE"))
+  plain_text = map(uint8, collect("Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal"))
+  res = repeating_xor(plain_text, k)
+  pass2 = (res == hex2bytes("0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"))
+  return (pass1 && pass2)
 end
-
-function test_detect_xor_encryption()
-  in_file = open("find_xor.txt", "r")
-  contents = map(chomp, readlines(in_file))
-  contents = join(contents)
-  close(in_file)
-  k = create_keys()
-  i = 1
-  stride = 60
-  while i + stride < length(contents)
-    s = contents[(i):(stride + (i + 1))]
-    s = hex2bytes(s)
-    i += stride
-    if detect_xor_encryption(s, k, 50)
-      r = rank_repeating_xor_decryption_keys(s, k, 50)
-      println("Possible XOR encrypted string detected at byte: ", i - 1)
-      println("ciphertext: ", ascii(ascii_filter(s)))
-      for t in r
-        println("Key: ", t[1], " rank: ", t[2], " cleartext: ", t[3])
-      end
-    end
-  end
-end
-
-function test_module()
-  run_test(test_fixed_xor)
-  run_test(test_repeating_xor)
-end
-
-test_module()
-
-k = create_keys()
-c = hex2bytes("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
 
 function ascii_filter(s::Array{Uint8})
   if is_valid_ascii(s)
@@ -130,10 +100,99 @@ function ascii_filter(s::Array{Uint8})
   end
   filter!(x -> is_valid_ascii([x]), s)
   @assert is_valid_ascii(s)
+  s = ascii(s)
+  @assert isa(s, ASCIIString)
   return s
 end
 
-detect_xor_encryption(c, k)
-d = Uint8[14,54,71,232,89,45,53,81,74,8,18,67,88,37,54,237,61,230,115,64,89,0,30,63,83,92,230,39,16,50,51,75,4,29,225,36,247,60,24,1,26,80,230,8,9,122,195,8,236,238,80,19,55,236,62,16,8,84,32,29]
-detect_xor_encryption(d, k)
-test_detect_xor_encryption()
+function stream_detect_xor_encryption(input::IOStream, k::Vector, stride::Uint = 256, threshold::Int = 50)
+  detected::Uint = 0
+  while !ismarked(input)
+    start = position(input) + 1
+    s = read_filtered_bytes_from_stream(input, stride)
+    s = ascii_filter(s)
+    if is_valid_ascii(s)
+      s = ascii(s)
+        if isalnum(s)
+        s = hex2bytes(ascii(s))
+      end
+    end
+    if detect_xor_encryption(s, k, threshold)
+      detected += 1
+      r = rank_repeating_xor_decryption_keys(s, k, threshold)
+      println("Possible XOR encrypted string detected at byte: ", start, "length: ", length(s))
+      println("ciphertext: ", ascii(ascii_filter(s)))
+      for t in r
+        println("Key: ", t[1], " rank: ", t[2], " cleartext: ", t[3])
+      end
+    end
+  end
+  return detected
+end
+
+function read_filtered_bytes_from_stream(input::IOStream, stride::Uint)
+  s = Array(Uint8, 0)
+  s = readbytes(input, stride)
+  s = inline_filter_bytes(s, uint8('\n'))
+  while length(s) < stride
+    b = readbytes(input, 1)
+    if length(b) == 0
+      mark(input)
+      return s
+    elseif b[1] != '\n'
+      append!(s, b)
+    end
+  end
+  return s
+end
+
+function hamming_distance(input_A::Array{Uint8}, input_B::Array{Uint8})
+  i = 1
+  x::Uint8 = 0
+  d::Uint8 = 0
+  bits(i)
+  while i <= length(input_A)
+    x = input_A[i] $ input_B[i]
+    for bit in map(uint8, (1, 2, 4, 8, 16, 32, 64, 128))
+      if (x & bit > 0)
+        d += 1
+      end
+    end
+    i += 1
+  end
+  return d
+end
+
+function test_detect_xor_encryption()
+  filename = "find_xor.txt"
+  infile = open(filename, "r")
+  k = create_keys()
+  d = stream_detect_xor_encryption(infile, k, uint(60), 65)
+  close(infile)
+  if d > 0
+    return true
+  end
+  return false
+end
+
+function inline_filter_bytes(input::Array{Uint8}, filter_byte::Uint8)
+  filter!(x -> x != filter_byte, input)
+  return input
+end
+
+
+function test_hamming_distance()
+  a = map(uint8, collect("this is a test"))
+  b = map(uint8, collect("wokka wokka!!!"))
+  return 0x25 == hamming_distance(a, b)
+end
+
+function test_module()
+  run_test(test_fixed_xor)
+  run_test(test_repeating_xor)
+  run_test(test_hamming_distance)
+  run_test(test_detect_xor_encryption)
+end
+
+test_module()
+
