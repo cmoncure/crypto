@@ -147,21 +147,32 @@ function read_filtered_bytes_from_stream(input::IOStream, stride::Uint)
 end
 
 function hamming_distance(input_A::Array{Uint8}, input_B::Array{Uint8})
-  i = 1
+  i::Uint = 1
   x::Uint8 = 0
   d::Uint8 = 0
   bits(i)
   while i <= length(input_A)
     x = input_A[i] $ input_B[i]
-    for bit in map(uint8, (1, 2, 4, 8, 16, 32, 64, 128))
-      if (x & bit > 0)
-        d += 1
-      end
+    while x != 0
+      d += 1
+      x &= x - 1
     end
     i += 1
   end
   return d
 end
+
+function normalized_edit_distance(input_bytes::Array{Uint8}, key_size::Uint)
+  @assert key_size <= sizeof(input_bytes / 4)
+  blocks::Array(Array{Uint8, key_size}, 4)
+  for i in 1:4
+    blocks[i] = input_bytes[1 + key_size * (i - 1):1 + key_size * i]
+  end
+  d1 = hamming_distance[blocks[1], blocks[2]]
+  d2 = hamming_distance[blocks[3], blocks[4]]
+  return (d1 + d2) / (2 * key_size)
+end
+
 
 function test_detect_xor_encryption()
   filename = "find_xor.txt"
@@ -196,3 +207,7 @@ end
 
 test_module()
 
+@profile test_detect_xor_encryption()
+Profile.print()
+
+test_hamming_distance()
