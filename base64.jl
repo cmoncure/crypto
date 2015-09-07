@@ -122,6 +122,3 @@ function base64_decode(bytes_input::Array{Uint8})
 end
 
 test_module()
-
-in = hex2bytes("14fb9c03d97e")
-ascii(base64_encode(in))
