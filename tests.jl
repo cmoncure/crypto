@@ -9,3 +9,4 @@ function run_test(test_func::Function)
   end
   print(text)
 end
+
