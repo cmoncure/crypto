@@ -185,30 +185,22 @@ function subbytes_affine_transform(b::Uint8)
   bit_vector_to_byte(o_bits)
 end
 
-function subbytes_affine_transform_inv(b::Uint8)
-  b_bits = bit_vector(b)
-  o_bits = bit_vector(0x00)
-  bits_addend = bit_vector(0x63)
-
-  for i::Unsigned = 1:8
-    o_bits[i] = b_bits[i] $ b_bits[mod1(i+4,8)] $ b_bits[mod1(i+5,8)] $ b_bits[mod1(i+6,8)] $ b_bits[mod1(i+7,8)] $ bits_addend[i]
-  end
-  bit_vector_to_byte(o_bits)
-end
-
-
 function gen_s_box(s::Uint8)
   s::Uint8 = gf_mult_inv(s)
   subbytes_affine_transform(s)
 end
 
-function gen_s_box_inv(s::Uint8)
-  subbytes_affine_transform_inv(s)
-  s::Uint8 = gf_mult_inv(s)
+function gen_s_box_inv()
+  box = Array(Uint8, 256)
+  for i in 0:255
+    s = s_box[i+1]
+    box[s+1] = i
+  end
+  box
 end
 
 const s_box = [gen_s_box(s) for s::Uint8 = 0:255]
-const s_box_inv = [gen_s_box_inv(s) for s::Uint8 = 0:255]
+const s_box_inv = gen_s_box_inv()
 
 function sub_bytes!(state::Array{Uint8})
   for i = 1:4
@@ -226,7 +218,6 @@ function sub_bytes_inv!(state::Array{Uint8})
   end
 end
 
-
 function shift_rows!(state::Array{Uint8})
   row = Array(Uint8, 4)
   for i = 2:4
@@ -241,7 +232,7 @@ function shift_rows_inv!(state::Array{Uint8})
   row = Array(Uint8, 4)
   for i = 2:4
     for j in 0:3
-      row[mod1(j+i),4] = state[i, j+1]
+      row[mod1(j+i,4)] = state[i, j+1]
     end
     state[i, :] = row
   end
@@ -337,22 +328,37 @@ end
 function rijndael(state::Array{Uint8}, key_block::Array{Uint8}, params::AES_cipher_params)
   add_round_key!(state, key_block[:,:,1])
 
-  i = 1
-  while i <= params.nr - 1
+  i = 2
+  while i <= params.nr
     sub_bytes!(state)
     shift_rows!(state)
     mix_columns!(state)
-    add_round_key!(state, key_block[:,:,i+1])
+    add_round_key!(state, key_block[:,:,i])
     i += 1
   end
 
   sub_bytes!(state)
   shift_rows!(state)
-  add_round_key!(state, key_block[:,:,i+1])
+  add_round_key!(state, key_block[:,:,i])
   state
 end
 
-function rijndael_inverse(input::Vector{Uint8}, key_block::Array{Uint8}, params::AES_cipher_params)
+function rijndael_inverse(state::Array{Uint8}, key_block::Array{Uint8}, params::AES_cipher_params)
+  i = params.nr + 1
+  add_round_key!(state, key_block[:,:,i])
+
+  while i > 2
+    i -= 1
+    shift_rows_inv!(state)
+    sub_bytes_inv!(state)
+    add_round_key!(state, key_block[:,:,i])
+    mix_columns_inv!(state)
+  end
+  i -= 1
+  shift_rows_inv!(state)
+  sub_bytes_inv!(state)
+  add_round_key!(state, key_block[:,:,i])
+  state
 end
 
 function pad_pkcs7!(plain_text::Vector{Uint8}, block_size::Unsigned)
@@ -378,39 +384,73 @@ end
 function test_rijndael()
   #plaintext_verify = hex2bytes("3243f6a8885a308d313198a2e0370734")
   #key_128_verify = hex2bytes("2b7e151628aed2a6abf7158809cf4f3c")
-    plaintext = hex2bytes("00112233445566778899aabbccddeeff")
+  plaintext = hex2bytes("00112233445566778899aabbccddeeff")
   key_128 = hex2bytes("000102030405060708090a0b0c0d0e0f")
   key_192 = hex2bytes("000102030405060708090a0b0c0d0e0f1011121314151617")
   key_256 = hex2bytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+
   apply_ECB_mode!(rijndael, plaintext, key_128)
   @assert plaintext == hex2bytes("69c4e0d86a7b0430d8cdb78070b4c55a")
-  plaintext = hex2bytes("00112233445566778899aabbccddeeff")
+  apply_ECB_mode!(rijndael_inverse, plaintext, key_128)
+  @assert plaintext == hex2bytes("00112233445566778899aabbccddeeff")
+
   apply_ECB_mode!(rijndael, plaintext, key_192)
   @assert plaintext == hex2bytes("dda97ca4864cdfe06eaf70a0ec0d7191")
-  plaintext = hex2bytes("00112233445566778899aabbccddeeff")
+  apply_ECB_mode!(rijndael_inverse, plaintext, key_192)
+  @assert plaintext == hex2bytes("00112233445566778899aabbccddeeff")
+
   apply_ECB_mode!(rijndael, plaintext, key_256)
   @assert plaintext == hex2bytes("8ea2b7ca516745bfeafc49904b496089")
+  apply_ECB_mode!(rijndael_inverse, plaintext, key_256)
+  @assert plaintext == hex2bytes("00112233445566778899aabbccddeeff")
+
   print ("Rijndael tests PASSED")
 end
 
 a = test_rijndael()
 
-in = hex2bytes("3243f6a8885a308d313198a2e0370734")
-key = hex2bytes("2b7e151628aed2a6abf7158809cf4f3c")
-prm = aes_get_cipher_params(key)
-keys = gen_key_schedule(key, prm)
-keyr = reshape(keys, 4, 4, 11)
+function detect_ECB_mode(cipher_text::Vector{Uint8}, block_size::Unsigned)
+  #chunk cipher_text into blocks of equal length and see if any are the same
+  @assert length(cipher_text) % block_size == 0
+  num_blocks::Unsigned = (length(cipher_text) - (length(cipher_text) % block_size)) / block_size
+  cipher_text = cipher_text[1:num_blocks*block_size]
+  cipher_text = reshape(cipher_text, int(block_size), int(num_blocks))
+  s = Set()
+  for i = 1:num_blocks
+    push!(s, cipher_text[:,i])
+  end
+  if length(s) < num_blocks
+    return true
+  end
+  return false
+end
 
-inr = reshape(in, 4, 4)
-@profile (for i = 1:10000; rijndael(inr, keyr, prm); end)
-@time rijndael(inr, keyr, prm)
 
-instream = open("6.txt", "r")
-input = map(uint8, collect(readall(instream)))
-@profile (for i = 1:100; apply_ECB_mode!(rijndael, input, key); end)
+# in = hex2bytes("00112233445566778899aabbccddeeff")
+# key = hex2bytes("000102030405060708090a0b0c0d0e0f")
+# prm = aes_get_cipher_params(key)
+# keys = gen_key_schedule(key, prm)
+# keyr = reshape(keys, 4, 4, 11)
 
-Profile.print()
-Profile.clear()
+# inr = reshape(in, 4, 4)
+# @profile (for i = 1:10000; rijndael(inr, keyr, prm); end)
+# @time rijndael(inr, keyr, prm)
 
-apply_ECB_mode!(rijndael, plaintext, key_128)
-4000000000 / 16 * 2.0e-5
+# input = map(uint8, collect(readall(instream)))
+# @profile (for i = 1:100; apply_ECB_mode!(rijndael, input, key); end)
+
+# Profile.print()
+# Profile.clear()
+
+
+function test_detect_ECB_mode()
+  infile = open("8.txt", "r")
+  strs = readlines(infile)
+  strs = map(chomp, strs)
+  strs = map(hex2bytes, strs)
+  for i = 1:length(strs)
+    if detect_ECB_mode(strs[i], uint(16))
+      println("possible ECB block cipher encryption: ", i, strs[i])
+    end
+  end
+end

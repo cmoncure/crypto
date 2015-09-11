@@ -121,4 +121,12 @@ function base64_decode(bytes_input::Array{Uint8})
   return bytes_output
 end
 
+function base64_decode_file_to_bytes(file_path::String)
+  infile = open(file_path, "r")
+  b64 = readall(infile)
+  b64 = map(uint8, collect(b64))
+  filter!(x -> x != '\n', b64)
+  base64_decode(b64)
+end
+
 test_module()
