@@ -199,7 +199,6 @@ function normalized_edit_distance(input_bytes::Array{Uint8}, key_size::Uint)
   return d1 / key_size
 end
 
-
 function assess_keysize(input_bytes::Array{Uint8}, min_length::Int, max_length::Int, num::Int = 3)
   i::Uint = 1
   len = 1 + max_length - min_length
@@ -213,10 +212,6 @@ function assess_keysize(input_bytes::Array{Uint8}, min_length::Int, max_length::
   println(r)
   return uint(r[2, 1:num])
 end
-
-assess_keysize(cipher_text, 2, 40, 5)
-subtypes(Rational)
-
 
 function inline_filter_bytes(input::Array{Uint8}, filter_byte::Uint8)
   filter!(x -> x != filter_byte, input)
@@ -300,10 +295,10 @@ function decrypt_repeating_key_xor_rank_keys(cipher_text::Array{Uint8}, keys::Ve
   return scores
 end
 
-# instream = open("6.txt", "r")
-# input = map(uint8, collect(readall(instream)))
-# filter!(x -> x != '\n', input)
-# cipher_text = base64_decode(input)
+instream = open("6.txt", "r")
+input = map(uint8, collect(readall(instream)))
+filter!(x -> x != '\n', input)
+cipher_text = base64_decode(input)
 # d = assess_keysize(cipher_text, 2, 40, 5)
-# k = decrypt_repeating_key_xor(cipher_text)
+k = decrypt_repeating_key_xor(cipher_text)
 # decrypt_repeating_key_xor_try_keys(cipher_text, k)
